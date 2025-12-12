@@ -1,0 +1,12 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Production
+dist/
+**/dist/
+build/
+
+# Environment
+.env
+.DS_Store
