@@ -22,10 +22,21 @@ const io = new Server(server, {
     cors: {
         origin: "*", // Allow all origins for dev simplicity; lock down in prod
         methods: ["GET", "POST"]
-    }
+    },
+    path: '/socket.io'
 });
 
-const { saveMessage, getMessagesForRoom, createUser, verifyUser, deleteMessage, resetRoom } = require('./database');
+const { saveMessage, getMessagesForRoom, createUser, verifyUser, deleteMessage, resetRoom, getRecentChats, markMessagesRead, updateUserAvatar } = require('./database');
+
+// --- Global State for Presence ---
+const onlineUsers = new Map(); // phone -> socketId
+// Helper to broadcast presence
+const broadcastPresence = (phone, isOnline) => {
+    // Notify everyone (or ideally just people who have this user in contacts)
+    // For MVP broadcast to all
+    io.emit('user_presence', { phone, isOnline });
+};
+
 
 io.on('connection', (socket) => {
     console.log(`User Connected: ${socket.id}`);
@@ -62,13 +73,49 @@ io.on('connection', (socket) => {
             const user = await verifyUser(phone, password);
             if (user) {
                 // Store user info in socket
-                socket.data.user = { username: user.username, phone: user.phone };
-                callback({ status: 'ok', username: user.username, phone: user.phone });
+                socket.data.user = { username: user.username, phone: user.phone, avatar: user.avatar };
+
+                // Presence Logic
+                onlineUsers.set(user.phone, socket.id);
+                broadcastPresence(user.phone, true);
+
+                callback({ status: 'ok', username: user.username, phone: user.phone, avatar: user.avatar });
             } else {
                 callback({ status: 'error', message: 'Invalid credentials' });
             }
         } catch (err) {
             callback({ status: 'error', message: 'Internal server error' });
+        }
+    });
+
+    // --- Profile Management ---
+    socket.on('update_profile', async ({ avatar }, callback) => {
+        const user = socket.data.user;
+        if (!user) return callback({ status: 'error', message: 'Not authenticated' });
+
+        try {
+            // Update in DB
+            await updateUserAvatar(user.phone, avatar);
+            // Update local socket data
+            user.avatar = avatar;
+            socket.data.user = user;
+            callback({ status: 'ok' });
+        } catch (err) {
+            console.error("Error updating profile", err);
+            callback({ status: 'error' });
+        }
+    });
+
+    // --- Data Fetching ---
+    socket.on('get_recent_chats', async (callback) => {
+        const currentUser = socket.data.user;
+        if (!currentUser) return callback([]);
+        try {
+            const chats = await getRecentChats(currentUser.phone);
+            callback(chats);
+        } catch (err) {
+            console.error("Error fetching chats", err);
+            callback([]);
         }
     });
 
@@ -119,10 +166,31 @@ io.on('connection', (socket) => {
     socket.on('send_message', async (data) => {
         try {
             const id = await saveMessage(data);
-            const dataWithId = { ...data, id };
+            const dataWithId = { ...data, id, status: 'sent', avatar: socket.data.user?.avatar }; // Default status
             io.in(data.room).emit('receive_message', dataWithId);
         } catch (err) {
             console.error("Error saving message", err);
+        }
+    });
+
+    socket.on('typing_start', ({ room }) => {
+        socket.to(room).emit('user_typing', { phone: socket.data.user?.phone });
+    });
+
+    socket.on('typing_stop', ({ room }) => {
+        socket.to(room).emit('user_stop_typing', { phone: socket.data.user?.phone });
+    });
+
+    socket.on('mark_read', async ({ room }) => {
+        const currentUser = socket.data.user;
+        if (!currentUser) return;
+
+        try {
+            await markMessagesRead(room, currentUser.phone);
+            // Notify other participant that messages in this room are read
+            socket.to(room).emit('messages_read_update', { room, readBy: currentUser.phone });
+        } catch (err) {
+            console.error("Error marking read", err);
         }
     });
 
@@ -147,7 +215,12 @@ io.on('connection', (socket) => {
     socket.on('disconnect', async () => {
         console.log('User Disconnected', socket.id);
 
-        // Check if user was a host
+        if (socket.data.user) {
+            onlineUsers.delete(socket.data.user.phone);
+            broadcastPresence(socket.data.user.phone, false);
+        }
+
+        // Check if user was a host (Legacy logic logic kept as is)
         for (const [roomId, hostId] of Object.entries(roomHosts)) {
             if (hostId === socket.id) {
                 console.log(`Host ${socket.id} left room ${roomId}. Closing room.`);
