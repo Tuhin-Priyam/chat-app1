@@ -12,10 +12,10 @@ const SettingsModal = ({ avatar, username, phone, onClose, onUpdateAvatar }) => 
         formData.append('file', file);
 
         try {
-            // Assuming server running on same host
+            // Assuming server running on relative path via proxy or same origin
             // In App.jsx we use / but here we might need full URL if proxy not set perfectly for POST
             // But usually proxy handles it.
-            const res = await fetch('http://localhost:3001/upload', { // Hardcoded PORT 3001 ? check server
+            const res = await fetch('/upload', { // Hardcoded PORT 3001 ? check server
                 method: 'POST',
                 body: formData
             });
@@ -48,7 +48,7 @@ const SettingsModal = ({ avatar, username, phone, onClose, onUpdateAvatar }) => 
                         border: '2px solid var(--primary-color)'
                     }}>
                         {avatar ? (
-                            <img src={`http://localhost:3001${avatar}`} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            <img src={avatar} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                         ) : (
                             <span style={{ fontSize: '3rem' }}>👤</span>
                         )}

@@ -283,8 +283,8 @@ function App() {
         formData.append('file', file);
 
         try {
-            // const serverUrl = process.env.REACT_APP_SERVER_URL || 'http://localhost:3001'; // MVP hardcode relative if same
-            const res = await fetch('http://localhost:3001/upload', { // Ensure port matches server
+            // const serverUrl = process.env.REACT_APP_SERVER_URL || '';
+            const res = await fetch('/upload', { // Relative path for proxy
                 method: 'POST',
                 body: formData
             });
@@ -350,7 +350,7 @@ function App() {
     // Render message content helper
     const renderMessageContent = (msg) => {
         // Handle server relative URLs
-        const content = msg.message.startsWith('/') ? `http://localhost:3001${msg.message}` : msg.message;
+        const content = msg.message;
 
         switch (msg.type) {
             case 'image': return <img src={content} alt="shared" style={{ maxWidth: '100%', borderRadius: '8px' }} />;
@@ -374,13 +374,13 @@ function App() {
         <div className="app-container">
             {/* OVERLAYS */}
             {showMediaCapture && <MediaCapture onMediaCaptured={handleMediaCaptured} onClose={() => setShowMediaCapture(false)} />}
-            {showVideoCall && <VideoCall socket={socket} room={room} username={username} incomingOffer={incomingCall?.offer} isVoiceOnly={isVoiceCall || incomingCall?.isVoiceOnly} onClose={() => { setShowVideoCall(false); setIsVoiceCall(false); }} />}
+            {showVideoCall && <VideoCall socket={socket} room={room} username={username} incomingOffer={incomingCall?.offer} isVoiceOnly={isVoiceCall || incomingCall?.isVoiceOnly} onClose={() => { setShowVideoCall(false); setIsVoiceCall(false); setIncomingCall(null); }} />}
             {incomingCall && !showVideoCall && (
                 <div className="incoming-call-modal glass-panel">
                     <h3>Incoming Call...</h3>
                     <div className="modal-actions">
-                        <button className="primary-btn" onClick={() => { setShowVideoCall(true); setIncomingCall(null); }}>Answer Video</button>
-                        <button className="primary-btn" onClick={() => { setIsVoiceCall(true); setShowVideoCall(true); setIncomingCall(null); }}>Answer Voice</button>
+                        <button className="primary-btn" onClick={() => { setShowVideoCall(true); }}>Answer Video</button>
+                        <button className="primary-btn" onClick={() => { setIsVoiceCall(true); setShowVideoCall(true); }}>Answer Voice</button>
                         <button className="danger-btn" onClick={() => setIncomingCall(null)}>Reject</button>
                     </div>
                 </div>
@@ -420,7 +420,7 @@ function App() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                 {/* My Avatar - Click to Open Settings */}
                                 <div onClick={() => setShowSettings(true)} style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--glass-surface)', cursor: 'pointer', overflow: 'hidden', border: '1px solid var(--primary-color)' }}>
-                                    {myAvatar ? <img src={`http://localhost:3001${myAvatar}`} alt="Me" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>⚙️</span>}
+                                    {myAvatar ? <img src={myAvatar} alt="Me" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>⚙️</span>}
                                 </div>
                                 <h3 style={{ margin: 0 }}>Chats</h3>
                             </div>
@@ -472,7 +472,7 @@ function App() {
                                     {messageList.map((messageContent, index) => {
                                         const isMyMessage = username === messageContent.author;
                                         // Use optional chaining for avatar just in case
-                                        const avatarUrl = messageContent.avatar ? `http://localhost:3001${messageContent.avatar}` : null;
+                                        const avatarUrl = messageContent.avatar ? messageContent.avatar : null;
 
                                         return (
                                             <div className={`message ${isMyMessage ? "you" : "other"}`} key={index}>
