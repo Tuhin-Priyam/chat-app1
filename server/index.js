@@ -54,8 +54,12 @@ io.on('connection', (socket) => {
     });
 
     // --- Room Management ---
+    const roomHosts = {}; // { roomId: hostSocketId }
+
     socket.on('create_room', (callback) => {
         const roomId = Math.floor(100000 + Math.random() * 900000).toString();
+        roomHosts[roomId] = socket.id;
+        console.log(`Room created: ${roomId} by Host: ${socket.id}`);
         callback({ roomId });
     });
 
@@ -100,8 +104,45 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         console.log('User Disconnected', socket.id);
+
+        // Check if user was a host
+        for (const [roomId, hostId] of Object.entries(roomHosts)) {
+            if (hostId === socket.id) {
+                console.log(`Host ${socket.id} left room ${roomId}. Closing room.`);
+
+                // Notify users in the room
+                io.in(roomId).emit('room_closed');
+
+                // Clear DB messages for this room
+                try {
+                    await resetRoom(roomId);
+                } catch (err) {
+                    console.error(`Error resetting room ${roomId}`, err);
+                }
+
+                // Remove from local map
+                delete roomHosts[roomId];
+
+                // Force disconnect all clients in that room (optional, but 'room_closed' event should handle UI redirection)
+                // io.in(roomId).disconnectSockets(); 
+                break;
+            }
+        }
+    });
+
+    // --- WebRTC Signaling ---
+    socket.on('call_offer', (data) => {
+        socket.to(data.room).emit('call_offer', data);
+    });
+
+    socket.on('call_answer', (data) => {
+        socket.to(data.room).emit('call_answer', data);
+    });
+
+    socket.on('ice_candidate', (data) => {
+        socket.to(data.room).emit('ice_candidate', data);
     });
 });
 

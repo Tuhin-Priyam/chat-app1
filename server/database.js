@@ -21,6 +21,7 @@ db.serialize(() => {
             room TEXT NOT NULL,
             author TEXT NOT NULL,
             message TEXT NOT NULL,
+            type TEXT DEFAULT 'text',
             time TEXT NOT NULL
         )
     `);
@@ -36,9 +37,9 @@ db.serialize(() => {
 // Save a message to the database
 function saveMessage(data) {
     return new Promise((resolve, reject) => {
-        const { room, author, message, time } = data;
-        const query = `INSERT INTO messages (room, author, message, time) VALUES (?, ?, ?, ?)`;
-        db.run(query, [room, author, message, time], function (err) {
+        const { room, author, message, time, type = 'text' } = data;
+        const query = `INSERT INTO messages (room, author, message, time, type) VALUES (?, ?, ?, ?, ?)`;
+        db.run(query, [room, author, message, time, type], function (err) {
             if (err) {
                 console.error('Error saving message:', err);
                 reject(err);
