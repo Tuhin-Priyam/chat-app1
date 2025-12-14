@@ -41,7 +41,8 @@ const MediaCapture = ({ onMediaCaptured, onClose }) => {
 
     const startRecording = () => {
         if (!stream) return;
-        const mediaRecorder = new MediaRecorder(stream);
+        const options = mode === 'audio' ? { mimeType: 'audio/webm' } : { mimeType: 'video/webm' };
+        const mediaRecorder = new MediaRecorder(stream, options);
         mediaRecorderRef.current = mediaRecorder;
         const chunks = [];
 
@@ -50,11 +51,11 @@ const MediaCapture = ({ onMediaCaptured, onClose }) => {
         };
 
         mediaRecorder.onstop = () => {
-            const blob = new Blob(chunks, { type: 'video/webm' });
+            const blob = new Blob(chunks, { type: mode === 'audio' ? 'audio/webm' : 'video/webm' });
             const reader = new FileReader();
             reader.readAsDataURL(blob);
             reader.onloadend = () => {
-                onMediaCaptured({ type: 'video', data: reader.result }); // Sending as DataURL for simplicity in this demo
+                onMediaCaptured({ type: mode === 'audio' ? 'audio' : 'video', data: reader.result });
                 stopCamera();
                 onClose();
             };
@@ -72,23 +73,37 @@ const MediaCapture = ({ onMediaCaptured, onClose }) => {
     };
 
     React.useEffect(() => {
-        startCamera();
+        if (mode === 'audio') {
+            startCamera({ audio: true, video: false });
+        } else {
+            startCamera({ audio: true, video: true });
+        }
         return () => stopCamera();
-    }, []);
+    }, [mode]);
 
     return (
         <div className="media-capture-overlay">
             <div className="media-capture-modal glass-panel">
                 <button className="close-btn" onClick={() => { stopCamera(); onClose(); }}>X</button>
 
-                <div className="video-preview">
-                    <video ref={videoRef} autoPlay playsInline muted />
-                </div>
+                {mode !== 'audio' && (
+                    <div className="video-preview">
+                        <video ref={videoRef} autoPlay playsInline muted />
+                    </div>
+                )}
+
+                {mode === 'audio' && (
+                    <div className="audio-preview" style={{ textAlign: 'center', padding: '40px' }}>
+                        <div style={{ fontSize: '4rem' }}>🎙️</div>
+                        <p>{isRecording ? 'Recording...' : 'Ready to Record'}</p>
+                    </div>
+                )}
 
                 <div className="controls">
                     <div className="mode-switch">
                         <button className={mode === 'photo' ? 'active' : ''} onClick={() => setMode('photo')}>Photo</button>
                         <button className={mode === 'video' ? 'active' : ''} onClick={() => setMode('video')}>Video</button>
+                        <button className={mode === 'audio' ? 'active' : ''} onClick={() => setMode('audio')}>Audio</button>
                     </div>
 
                     {mode === 'photo' ? (

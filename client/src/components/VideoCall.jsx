@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-const VideoCall = ({ socket, room, username, incomingOffer, onClose }) => {
+const VideoCall = ({ socket, room, username, incomingOffer, onClose, isVoiceOnly = false }) => {
     const localVideoRef = useRef(null);
     const remoteVideoRef = useRef(null);
     const peerConnectionRef = useRef(null);
@@ -16,8 +16,9 @@ const VideoCall = ({ socket, room, username, incomingOffer, onClose }) => {
     useEffect(() => {
         const initCall = async () => {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+                const constraints = { video: !isVoiceOnly, audio: true };
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                if (localVideoRef.current && !isVoiceOnly) localVideoRef.current.srcObject = stream;
 
                 peerConnectionRef.current = new RTCPeerConnection(iceServers);
 
@@ -111,11 +112,13 @@ const VideoCall = ({ socket, room, username, incomingOffer, onClose }) => {
         <div className="video-call-overlay">
             <div className="video-grid">
                 <div className="video-container local">
-                    <video ref={localVideoRef} autoPlay playsInline muted />
+                    {!isVoiceOnly && <video ref={localVideoRef} autoPlay playsInline muted />}
+                    {isVoiceOnly && <div style={{ fontSize: '3rem' }}>🎤</div>}
                     <span>You</span>
                 </div>
                 <div className="video-container remote">
-                    <video ref={remoteVideoRef} autoPlay playsInline />
+                    {!isVoiceOnly && <video ref={remoteVideoRef} autoPlay playsInline />}
+                    {isVoiceOnly && <div style={{ fontSize: '3rem' }}>🔊</div>}
                     <span>Remote</span>
                 </div>
             </div>

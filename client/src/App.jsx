@@ -22,7 +22,9 @@ function App() {
     // UI State
     const [showMediaCapture, setShowMediaCapture] = useState(false);
     const [showVideoCall, setShowVideoCall] = useState(false);
-    const [incomingCall, setIncomingCall] = useState(null); // { offer, from }
+    const [isVoiceCall, setIsVoiceCall] = useState(false);
+    const [incomingCall, setIncomingCall] = useState(null); // { offer, from, isVoiceOnly }
+
 
     // Auth Mode: 'login' or 'register'
     const [authMode, setAuthMode] = useState('login');
@@ -162,9 +164,14 @@ function App() {
                     room={room}
                     username={username}
                     incomingOffer={incomingCall?.offer}
-                    onClose={() => setShowVideoCall(false)}
+                    isVoiceOnly={isVoiceCall || incomingCall?.isVoiceOnly}
+                    onClose={() => {
+                        setShowVideoCall(false);
+                        setIsVoiceCall(false);
+                    }}
                 />
             )}
+
 
             {incomingCall && !showVideoCall && (
                 <div className="incoming-call-modal glass-panel">
@@ -185,8 +192,15 @@ function App() {
                             // Actually, the VideoCall I wrote is purely "Caller" logic (creates offer).
                             // I need to patch VideoCall to handle answering.
                             // For this task, I will just show the UI for now and fix VideoCall in next step.
-                        }}>Answer</button>
+                        }}>Answer with Video</button>
+                        <button className="primary-btn" onClick={() => {
+                            // Ideally check if offer was voice-only and force voice-only answer
+                            setIsVoiceCall(true);
+                            setShowVideoCall(true);
+                            setIncomingCall(null);
+                        }}>Answer with Voice</button>
                         <button className="danger-btn" onClick={() => setIncomingCall(null)}>Reject</button>
+
                     </div>
                 </div>
             )}
@@ -277,7 +291,9 @@ function App() {
                                         {messageContent.type === 'text' && <p>{messageContent.message}</p>}
                                         {messageContent.type === 'image' && <img src={messageContent.message} alt="shared" style={{ maxWidth: '100%', borderRadius: '8px' }} />}
                                         {messageContent.type === 'video' && <video src={messageContent.message} controls style={{ maxWidth: '100%', borderRadius: '8px' }} />}
+                                        {messageContent.type === 'audio' && <audio src={messageContent.message} controls style={{ width: '200px' }} />}
                                     </div>
+
                                     <div className="message-meta">
                                         <span>{messageContent.time}</span>
                                         <span>•</span>
@@ -300,7 +316,9 @@ function App() {
 
                     <div className="chat-footer">
                         <button className="secondary-btn" title="Send Media" onClick={() => setShowMediaCapture(true)}>📷</button>
-                        <button className="secondary-btn" title="Video Call" onClick={() => setShowVideoCall(true)}>📞</button>
+                        <button className="secondary-btn" title="Video Call" onClick={() => { setIsVoiceCall(false); setShowVideoCall(true); }}>📞</button>
+                        <button className="secondary-btn" title="Voice Call" onClick={() => { setIsVoiceCall(true); setShowVideoCall(true); }}>🎙️</button>
+
                         <input
                             type="text"
                             value={message}
