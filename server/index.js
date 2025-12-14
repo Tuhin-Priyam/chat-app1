@@ -25,16 +25,33 @@ const io = new Server(server, {
     }
 });
 
+const { saveMessage, getMessagesForRoom } = require('./database');
+
 io.on('connection', (socket) => {
     console.log(`User Connected: ${socket.id}`);
 
-    socket.on('join_room', (data) => {
+    socket.on('join_room', async (data) => {
         socket.join(data);
         console.log(`User with ID: ${socket.id} joined room: ${data}`);
+
+        // Load message history
+        try {
+            const messages = await getMessagesForRoom(data);
+            socket.emit('load_messages', messages);
+        } catch (err) {
+            console.error("Error loading messages", err);
+        }
     });
 
-    socket.on('send_message', (data) => {
-        socket.to(data.room).emit('receive_message', data);
+    socket.on('send_message', async (data) => {
+        // Save message to database
+        try {
+            await saveMessage(data);
+            // Broadcast to room (excluding sender)
+            socket.to(data.room).emit('receive_message', data);
+        } catch (err) {
+            console.error("Error saving message", err);
+        }
     });
 
     socket.on('disconnect', () => {

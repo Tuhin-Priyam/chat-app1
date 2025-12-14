@@ -28,14 +28,20 @@ function App() {
             setMessageList((list) => [...list, data]);
         }
 
+        function onLoadMessages(messages) {
+            setMessageList(messages);
+        }
+
         socket.on('connect', onConnect);
         socket.on('disconnect', onDisconnect);
         socket.on('receive_message', onReceiveMessage);
+        socket.on('load_messages', onLoadMessages);
 
         return () => {
             socket.off('connect', onConnect);
             socket.off('disconnect', onDisconnect);
             socket.off('receive_message', onReceiveMessage);
+            socket.off('load_messages', onLoadMessages);
         };
     }, []);
 
