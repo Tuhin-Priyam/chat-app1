@@ -30,10 +30,25 @@ const { saveMessage, getMessagesForRoom, createUser, verifyUser, deleteMessage, 
 io.on('connection', (socket) => {
     console.log(`User Connected: ${socket.id}`);
 
+    // --- Validation Helper ---
+    const validateIndianPhone = (ph) => {
+        if (!ph) return null;
+        // The client should send normalized 10 digit, but we double check
+        const digits = ph.replace(/\D/g, '');
+        if (digits.length === 10 && /^[6-9]/.test(digits)) {
+            return digits;
+        }
+        return null;
+    };
+
     // --- Authentication ---
     socket.on('register', async ({ username, phone, password }, callback) => {
+        const validPhone = validateIndianPhone(phone);
+        if (!validPhone) {
+            return callback({ status: 'error', message: 'Invalid phone number format' });
+        }
         try {
-            await createUser(username, phone, password);
+            await createUser(username, validPhone, password);
             callback({ status: 'ok' });
         } catch (err) {
             callback({ status: 'error', message: 'Phone number already registered or invalid data' });
@@ -41,6 +56,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('login', async ({ phone, password }, callback) => {
+        // Login doesn't technically need strict validation if we just match DB,
+        // but it helps prevent useless DB queries.
         try {
             const user = await verifyUser(phone, password);
             if (user) {
@@ -64,12 +81,17 @@ io.on('connection', (socket) => {
             return callback({ status: 'error', message: 'Not authenticated' });
         }
 
+        const validTarget = validateIndianPhone(targetPhone);
+        if (!validTarget) {
+            return callback({ status: 'error', message: 'Invalid target phone number' });
+        }
+
         // Deterministic Room ID: sort phone numbers to ensure a unique room for the pair
-        const participants = [currentUser.phone, targetPhone].sort();
+        const participants = [currentUser.phone, validTarget].sort();
         const roomId = participants.join('_');
 
         socket.join(roomId);
-        console.log(`User ${currentUser.phone} joined chat with ${targetPhone} in room: ${roomId}`);
+        console.log(`User ${currentUser.phone} joined chat with ${validTarget} in room: ${roomId}`);
 
         try {
             const messages = await getMessagesForRoom(roomId);

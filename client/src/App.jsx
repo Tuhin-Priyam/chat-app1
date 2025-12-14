@@ -86,22 +86,54 @@ function App() {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messageList]);
 
+    // Validation Helper
+    const validateIndianPhone = (ph) => {
+        // Strip non-digits
+        const digits = ph.replace(/\D/g, '');
+
+        let normalized = "";
+        // Check lengths
+        if (digits.length === 10) {
+            normalized = digits;
+        } else if (digits.length === 11 && digits.startsWith('0')) {
+            normalized = digits.substring(1);
+        } else if (digits.length === 12 && digits.startsWith('91')) {
+            normalized = digits.substring(2);
+        } else {
+            return null; // Invalid length
+        }
+
+        // Check if valid mobile start (6,7,8,9)
+        if (/^[6-9]/.test(normalized)) {
+            return normalized;
+        }
+        return null; // Invalid prefix
+    };
+
     const handleAuth = async () => {
         if (!phone || !password || (authMode === 'register' && !username)) {
             setError("Please fill in all fields");
             return;
         }
 
+        const normalizedPhone = validateIndianPhone(phone);
+        if (!normalizedPhone) {
+            setError("Please enter a valid Indian mobile number (e.g., 9876543210)");
+            return;
+        }
+
         const event = authMode === 'login' ? 'login' : 'register';
         const payload = authMode === 'login'
-            ? { phone, password }
-            : { username, phone, password };
+            ? { phone: normalizedPhone, password }
+            : { username, phone: normalizedPhone, password };
 
         socket.emit(event, payload, (response) => {
             if (response.status === 'ok') {
                 setError("");
+                // Set normalized phone back to state to ensure consistency
+                setPhone(normalizedPhone);
                 if (response.username) setUsername(response.username);
-                if (response.phone) setPhone(response.phone);
+                // response.phone should be same as normalizedPhone
                 setView('room-select');
             } else {
                 setError(response.message);
@@ -114,9 +146,21 @@ function App() {
             setError("Please enter a phone number to chat with");
             return;
         }
-        socket.emit('start_chat', { targetPhone }, (response) => {
+
+        const normalizedTarget = validateIndianPhone(targetPhone);
+        if (!normalizedTarget) {
+            setError("Invalid India Phone Number. Use 10-digit format.");
+            return;
+        }
+        if (normalizedTarget === phone) {
+            setError("You cannot chat with yourself.");
+            return;
+        }
+
+        socket.emit('start_chat', { targetPhone: normalizedTarget }, (response) => {
             if (response.status === 'ok') {
                 setRoom(response.roomId);
+                setTargetPhone(normalizedTarget); // Keep UI consistent
                 setView('chat');
                 setError("");
             } else {
@@ -218,7 +262,8 @@ function App() {
                     )}
                     <input
                         type="tel"
-                        placeholder="Phone Number"
+                        placeholder="Mobile Number (e.g. 9876543210)"
+                        value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                     />
                     <input
@@ -250,7 +295,8 @@ function App() {
 
                     <input
                         type="tel"
-                        placeholder="Enter Friend's Phone Number..."
+                        placeholder="Friend's Mobile Number..."
+                        value={targetPhone}
                         onChange={(event) => setTargetPhone(event.target.value)}
                     />
                     <button onClick={startChat} className="primary-btn">
