@@ -9,7 +9,9 @@ export default defineConfig({
             '/socket.io': {
                 target: 'http://localhost:3001',
                 ws: true
-            }
+            },
+            '/upload': 'http://localhost:3001',
+            '/uploads': 'http://localhost:3001'
         }
     }
 })

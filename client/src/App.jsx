@@ -228,11 +228,19 @@ function App() {
 
         const normalizedTarget = validateIndianPhone(target);
         if (!normalizedTarget) {
-            if (!numberToChat) setError("Invalid Phone Number"); // Only show error if manual entry
+            if (!numberToChat) {
+                const msg = "Invalid Phone Number. Please enter a 10-digit Indian number.";
+                setError(msg);
+                alert(msg);
+            }
             return;
         }
         if (normalizedTarget === phone) {
-            if (!numberToChat) setError("You cannot chat with yourself.");
+            if (!numberToChat) {
+                const msg = "You cannot chat with yourself.";
+                setError(msg);
+                alert(msg);
+            }
             return;
         }
 
@@ -419,7 +427,8 @@ function App() {
                             <button onClick={() => startChat(null)} className="primary-btn" style={{ padding: '5px 10px', width: 'auto' }}>+</button>
                         </div>
                         <div style={{ padding: '10px' }}>
-                            <input type="tel" placeholder="Search / New Phone..." value={targetPhone} onChange={(e) => setTargetPhone(e.target.value)} style={{ padding: '10px' }} />
+                            <input type="tel" placeholder="Search / New Phone..." value={targetPhone} onChange={(e) => { setTargetPhone(e.target.value); setError(""); }} style={{ padding: '10px' }} />
+                            {error && <p style={{ color: '#ff6b6b', fontSize: '0.8rem', marginTop: '5px' }}>{error}</p>}
                         </div>
 
                         <ContactList
