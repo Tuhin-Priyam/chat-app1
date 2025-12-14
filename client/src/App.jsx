@@ -158,56 +158,32 @@ function App() {
         };
     }, [room]); // Re-bind when room changes to capture correct 'room' in closures if needed
 
-    // Auto-reconnect auth & Session Restoration
+    // Auto-reconnect auth (In-Memory Only)
+    // This handles server restarts or network drops while the user is using the app.
+    // It does NOT persist across page refreshes (for privacy).
     useEffect(() => {
-        const storedCreds = localStorage.getItem('chat_creds');
-        let storedPhone = null;
-        let storedPassword = null;
-        if (storedCreds) {
-            try {
-                const parsed = JSON.parse(storedCreds);
-                storedPhone = parsed.phone;
-                storedPassword = parsed.password;
-                if (!phone && storedPhone) {
-                    setPhone(storedPhone);
-                    setPassword(storedPassword);
-                }
-            } catch (e) {
-                console.error("Error parsing stored creds", e);
-            }
-        }
-
-        const credsToUse = (phone && password) ? { phone, password } : (storedPhone ? { phone: storedPhone, password: storedPassword } : null);
-
-        function attemptLogin() {
-            if (credsToUse) {
-                console.log("Attempting session restore...");
-                socket.emit('login', credsToUse, (response) => {
+        function attemptReLogin() {
+            if (phone && password) {
+                console.log("Restoring session (in-memory)...");
+                socket.emit('login', { phone, password }, (response) => {
                     if (response.status === 'ok') {
                         console.log("Session restored!");
-                        if (response.username) setUsername(response.username);
-                        if (response.avatar) setMyAvatar(response.avatar);
-                        // Update state if restored from storage
-                        if (!phone) {
-                            setPhone(credsToUse.phone);
-                            setPassword(credsToUse.password);
-                        }
-                        setView('chat');
-                        refreshRecentChats();
                         if (room) socket.emit('join_room', room);
                     }
                 });
             }
         }
 
-        // Try immediately if connected
         if (socket.connected) {
-            attemptLogin();
+            // We don't want to spam login if already connected and authed,
+            // but if server restarted, we might need to.
+            // For now, let's rely on 'connect' event mostly, or simple check.
+            // Actually, we can just let it run. Server handles idempotent logins fine.
+            attemptReLogin();
         }
 
-        // Also listen for connect
-        socket.on('connect', attemptLogin);
-        return () => socket.off('connect', attemptLogin);
+        socket.on('connect', attemptReLogin);
+        return () => socket.off('connect', attemptReLogin);
     }, [phone, password, room]);
 
     // Auto-scroll
@@ -253,8 +229,7 @@ function App() {
 
         socket.emit(event, payload, (response) => {
             if (response.status === 'ok') {
-                // Save creds
-                localStorage.setItem('chat_creds', JSON.stringify(payload));
+                // Save creds logic REMOVED for privacy
 
                 setError("");
                 setPhone(normalizedPhone);
