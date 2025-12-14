@@ -31,20 +31,22 @@ io.on('connection', (socket) => {
     console.log(`User Connected: ${socket.id}`);
 
     // --- Authentication ---
-    socket.on('register', async ({ username, password }, callback) => {
+    socket.on('register', async ({ username, phone, password }, callback) => {
         try {
-            await createUser(username, password);
+            await createUser(username, phone, password);
             callback({ status: 'ok' });
         } catch (err) {
-            callback({ status: 'error', message: 'Username already taken or invalid' });
+            callback({ status: 'error', message: 'Phone number already registered or invalid data' });
         }
     });
 
-    socket.on('login', async ({ username, password }, callback) => {
+    socket.on('login', async ({ phone, password }, callback) => {
         try {
-            const isValid = await verifyUser(username, password);
-            if (isValid) {
-                callback({ status: 'ok' });
+            const user = await verifyUser(phone, password);
+            if (user) {
+                // Store user info in socket
+                socket.data.user = { username: user.username, phone: user.phone };
+                callback({ status: 'ok', username: user.username, phone: user.phone });
             } else {
                 callback({ status: 'error', message: 'Invalid credentials' });
             }
@@ -54,13 +56,29 @@ io.on('connection', (socket) => {
     });
 
     // --- Room Management ---
-    const roomHosts = {}; // { roomId: hostSocketId }
+    const roomHosts = {}; // { roomId: hostSocketId } - kept for legacy or potential group usage later
 
-    socket.on('create_room', (callback) => {
-        const roomId = Math.floor(100000 + Math.random() * 900000).toString();
-        roomHosts[roomId] = socket.id;
-        console.log(`Room created: ${roomId} by Host: ${socket.id}`);
-        callback({ roomId });
+    socket.on('start_chat', async ({ targetPhone }, callback) => {
+        const currentUser = socket.data.user;
+        if (!currentUser) {
+            return callback({ status: 'error', message: 'Not authenticated' });
+        }
+
+        // Deterministic Room ID: sort phone numbers to ensure a unique room for the pair
+        const participants = [currentUser.phone, targetPhone].sort();
+        const roomId = participants.join('_');
+
+        socket.join(roomId);
+        console.log(`User ${currentUser.phone} joined chat with ${targetPhone} in room: ${roomId}`);
+
+        try {
+            const messages = await getMessagesForRoom(roomId);
+            socket.emit('load_messages', messages);
+            callback({ status: 'ok', roomId });
+        } catch (err) {
+            console.error("Error loading messages for chat", err);
+            callback({ status: 'error', message: 'Could not load chat' });
+        }
     });
 
     socket.on('join_room', async (data) => {

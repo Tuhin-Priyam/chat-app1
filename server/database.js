@@ -25,10 +25,12 @@ db.serialize(() => {
             time TEXT NOT NULL
         )
     `);
+    // Added phone column, removed unique constraint from username, made phone unique and required
     db.run(`
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
+            username TEXT NOT NULL,
+            phone TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL
         )
     `);
@@ -66,14 +68,14 @@ function getMessagesForRoom(room) {
 }
 
 // User Management
-function createUser(username, password) {
+function createUser(username, phone, password) {
     return new Promise(async (resolve, reject) => {
         try {
             const hash = await bcrypt.hash(password, 10);
-            const query = `INSERT INTO users (username, password) VALUES (?, ?)`;
-            db.run(query, [username, hash], function (err) {
+            const query = `INSERT INTO users (username, phone, password) VALUES (?, ?, ?)`;
+            db.run(query, [username, phone, hash], function (err) {
                 if (err) {
-                    reject(err); // Likely unique constraint violation
+                    reject(err); // Likely unique constraint violation on phone
                 } else {
                     resolve(this.lastID);
                 }
@@ -84,15 +86,19 @@ function createUser(username, password) {
     });
 }
 
-function verifyUser(username, password) {
+function verifyUser(phone, password) {
     return new Promise((resolve, reject) => {
-        const query = `SELECT * FROM users WHERE username = ?`;
-        db.get(query, [username], async (err, row) => {
+        const query = `SELECT * FROM users WHERE phone = ?`;
+        db.get(query, [phone], async (err, row) => {
             if (err) reject(err);
             if (!row) return resolve(false);
 
             const match = await bcrypt.compare(password, row.password);
-            resolve(match);
+            if (match) {
+                resolve(row); // Return user object on success
+            } else {
+                resolve(false);
+            }
         });
     });
 }
