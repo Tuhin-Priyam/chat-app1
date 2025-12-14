@@ -158,21 +158,56 @@ function App() {
         };
     }, [room]); // Re-bind when room changes to capture correct 'room' in closures if needed
 
-    // Auto-reconnect auth
+    // Auto-reconnect auth & Session Restoration
     useEffect(() => {
-        function onConnect() {
-            if (phone && password) {
-                console.log("Reconnecting session...");
-                socket.emit('login', { phone, password }, (response) => {
+        const storedCreds = localStorage.getItem('chat_creds');
+        let storedPhone = null;
+        let storedPassword = null;
+        if (storedCreds) {
+            try {
+                const parsed = JSON.parse(storedCreds);
+                storedPhone = parsed.phone;
+                storedPassword = parsed.password;
+                if (!phone && storedPhone) {
+                    setPhone(storedPhone);
+                    setPassword(storedPassword);
+                }
+            } catch (e) {
+                console.error("Error parsing stored creds", e);
+            }
+        }
+
+        const credsToUse = (phone && password) ? { phone, password } : (storedPhone ? { phone: storedPhone, password: storedPassword } : null);
+
+        function attemptLogin() {
+            if (credsToUse) {
+                console.log("Attempting session restore...");
+                socket.emit('login', credsToUse, (response) => {
                     if (response.status === 'ok') {
-                        console.log("Reconnected successfully");
+                        console.log("Session restored!");
+                        if (response.username) setUsername(response.username);
+                        if (response.avatar) setMyAvatar(response.avatar);
+                        // Update state if restored from storage
+                        if (!phone) {
+                            setPhone(credsToUse.phone);
+                            setPassword(credsToUse.password);
+                        }
+                        setView('chat');
+                        refreshRecentChats();
                         if (room) socket.emit('join_room', room);
                     }
                 });
             }
         }
-        socket.on('connect', onConnect);
-        return () => socket.off('connect', onConnect);
+
+        // Try immediately if connected
+        if (socket.connected) {
+            attemptLogin();
+        }
+
+        // Also listen for connect
+        socket.on('connect', attemptLogin);
+        return () => socket.off('connect', attemptLogin);
     }, [phone, password, room]);
 
     // Auto-scroll
@@ -218,6 +253,9 @@ function App() {
 
         socket.emit(event, payload, (response) => {
             if (response.status === 'ok') {
+                // Save creds
+                localStorage.setItem('chat_creds', JSON.stringify(payload));
+
                 setError("");
                 setPhone(normalizedPhone);
                 if (response.username) setUsername(response.username);
