@@ -11,6 +11,8 @@ const db = new sqlite3.Database(dbPath, (err) => {
     }
 });
 
+const bcrypt = require('bcryptjs');
+
 // Initialize database table
 db.serialize(() => {
     db.run(`
@@ -20,6 +22,13 @@ db.serialize(() => {
             author TEXT NOT NULL,
             message TEXT NOT NULL,
             time TEXT NOT NULL
+        )
+    `);
+    db.run(`
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL
         )
     `);
 });
@@ -55,7 +64,62 @@ function getMessagesForRoom(room) {
     });
 }
 
+// User Management
+function createUser(username, password) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            const hash = await bcrypt.hash(password, 10);
+            const query = `INSERT INTO users (username, password) VALUES (?, ?)`;
+            db.run(query, [username, hash], function (err) {
+                if (err) {
+                    reject(err); // Likely unique constraint violation
+                } else {
+                    resolve(this.lastID);
+                }
+            });
+        } catch (err) {
+            reject(err);
+        }
+    });
+}
+
+function verifyUser(username, password) {
+    return new Promise((resolve, reject) => {
+        const query = `SELECT * FROM users WHERE username = ?`;
+        db.get(query, [username], async (err, row) => {
+            if (err) reject(err);
+            if (!row) return resolve(false);
+
+            const match = await bcrypt.compare(password, row.password);
+            resolve(match);
+        });
+    });
+}
+
+// Message Controls
+function deleteMessage(id) {
+    return new Promise((resolve, reject) => {
+        db.run(`DELETE FROM messages WHERE id = ?`, [id], function (err) {
+            if (err) reject(err);
+            else resolve(this.changes);
+        });
+    });
+}
+
+function resetRoom(room) {
+    return new Promise((resolve, reject) => {
+        db.run(`DELETE FROM messages WHERE room = ?`, [room], function (err) {
+            if (err) reject(err);
+            else resolve(this.changes);
+        });
+    });
+}
+
 module.exports = {
     saveMessage,
-    getMessagesForRoom
+    getMessagesForRoom,
+    createUser,
+    verifyUser,
+    deleteMessage,
+    resetRoom
 };

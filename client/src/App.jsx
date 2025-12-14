@@ -6,24 +6,23 @@ const socket = io('/', {
 });
 
 function App() {
-    const [isConnected, setIsConnected] = useState(socket.connected);
+    // App State: 'auth', 'room-select', 'chat'
+    const [view, setView] = useState('auth');
+
+    // Data State
+    const [username, setUsername] = useState("");
+    const [password, setPassword] = useState("");
     const [room, setRoom] = useState("");
     const [message, setMessage] = useState("");
     const [messageList, setMessageList] = useState([]);
-    const [username, setUsername] = useState("");
-    const [chatActive, setChatActive] = useState(false);
+
+    // Auth Mode: 'login' or 'register'
+    const [authMode, setAuthMode] = useState('login');
+    const [error, setError] = useState("");
 
     const messagesEndRef = useRef(null);
 
     useEffect(() => {
-        function onConnect() {
-            setIsConnected(true);
-        }
-
-        function onDisconnect() {
-            setIsConnected(false);
-        }
-
         function onReceiveMessage(data) {
             setMessageList((list) => [...list, data]);
         }
@@ -32,16 +31,24 @@ function App() {
             setMessageList(messages);
         }
 
-        socket.on('connect', onConnect);
-        socket.on('disconnect', onDisconnect);
+        function onMessageDeleted(id) {
+            setMessageList((list) => list.filter(msg => msg.id !== id));
+        }
+
+        function onRoomReset() {
+            setMessageList([]);
+        }
+
         socket.on('receive_message', onReceiveMessage);
         socket.on('load_messages', onLoadMessages);
+        socket.on('message_deleted', onMessageDeleted);
+        socket.on('room_reset', onRoomReset);
 
         return () => {
-            socket.off('connect', onConnect);
-            socket.off('disconnect', onDisconnect);
             socket.off('receive_message', onReceiveMessage);
             socket.off('load_messages', onLoadMessages);
+            socket.off('message_deleted', onMessageDeleted);
+            socket.off('room_reset', onRoomReset);
         };
     }, []);
 
@@ -50,11 +57,36 @@ function App() {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messageList]);
 
+    const handleAuth = async () => {
+        if (!username || !password) {
+            setError("Please fill in all fields");
+            return;
+        }
 
-    const joinRoom = () => {
-        if (room !== "" && username !== "") {
-            socket.emit("join_room", room);
-            setChatActive(true);
+        const event = authMode === 'login' ? 'login' : 'register';
+        socket.emit(event, { username, password }, (response) => {
+            if (response.status === 'ok') {
+                setError("");
+                setView('room-select');
+            } else {
+                setError(response.message);
+            }
+        });
+    };
+
+    const createRoom = () => {
+        socket.emit('create_room', (response) => {
+            setRoom(response.roomId);
+            joinRoom(response.roomId);
+        });
+    };
+
+    const joinRoom = (roomIdToJoin) => {
+        const r = roomIdToJoin || room;
+        if (r !== "" && username !== "") {
+            setRoom(r);
+            socket.emit("join_room", r);
+            setView('chat');
         }
     };
 
@@ -68,54 +100,128 @@ function App() {
             };
 
             await socket.emit("send_message", messageData);
-            setMessageList((list) => [...list, messageData]);
             setMessage("");
+        }
+    };
+
+    const deleteMessage = (id) => {
+        socket.emit('delete_message', { id, room });
+    };
+
+    const resetRoom = () => {
+        if (confirm("Are you sure you want to delete all messages in this room?")) {
+            socket.emit('reset_room', room);
         }
     };
 
     return (
         <div className="app-container">
-            {!chatActive ? (
-                <div className="join-container glass-panel">
-                    <h1>Welcome</h1>
-                    <p>Join a room to start chatting</p>
+
+            {/* AUTH VIEW */}
+            {view === 'auth' && (
+                <div className="auth-container glass-panel">
+                    <h1>Chat App</h1>
+                    <h2>{authMode === 'login' ? 'Login' : 'Register'}</h2>
+
+                    {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
+
                     <input
                         type="text"
-                        placeholder="Username..."
-                        onChange={(event) => setUsername(event.target.value)}
+                        placeholder="Username"
+                        onChange={(e) => setUsername(e.target.value)}
                     />
                     <input
+                        type="password"
+                        placeholder="Password"
+                        onChange={(e) => setPassword(e.target.value)}
+                    />
+
+                    <button className="primary-btn" onClick={handleAuth}>
+                        {authMode === 'login' ? 'Enter' : 'Create Account'}
+                    </button>
+
+                    <button
+                        className="secondary-btn"
+                        onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                    >
+                        {authMode === 'login' ? "Don't have an account? Register" : "Already have an account? Login"}
+                    </button>
+                </div>
+            )}
+
+            {/* ROOM SELECT VIEW */}
+            {view === 'room-select' && (
+                <div className="join-container glass-panel">
+                    <h1>Welcome, {username}</h1>
+                    <p>Create a new room or join an existing one.</p>
+
+                    <button className="primary-btn" onClick={createRoom}>
+                        &#43; Create New Room
+                    </button>
+
+                    <div style={{ width: '100%', height: '1px', background: 'var(--glass-border)', margin: '10px 0' }}></div>
+
+                    <input
                         type="text"
-                        placeholder="Room ID..."
+                        placeholder="Enter Room ID to Join..."
                         onChange={(event) => setRoom(event.target.value)}
                     />
-                    <button onClick={joinRoom} className="primary-btn">Join Room</button>
+                    <button onClick={() => joinRoom(null)} className="primary-btn" style={{ background: 'rgba(255,255,255,0.1)' }}>
+                        Join Room
+                    </button>
                 </div>
-            ) : (
+            )}
+
+            {/* CHAT VIEW */}
+            {view === 'chat' && (
                 <div className="chat-window glass-panel">
                     <div className="chat-header">
-                        <p>Live Chat: <strong>{room}</strong></p>
-                        <div className={`status-indicator ${isConnected ? 'online' : 'offline'}`}></div>
+                        <div className="header-info">
+                            <h3>Room: <span style={{ color: 'var(--success)' }}>{room}</span></h3>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Logged in as {username}</span>
+                        </div>
+                        <div className="header-controls">
+                            <button className="danger-btn" onClick={resetRoom}>Clear Room</button>
+                            <button className="secondary-btn" onClick={() => window.location.reload()}>Leave</button>
+                        </div>
                     </div>
+
                     <div className="chat-body">
+                        {messageList.length === 0 && (
+                            <div style={{ textAlign: 'center', color: 'var(--text-muted)', marginTop: '20px' }}>
+                                No messages yet. Say hello!
+                            </div>
+                        )}
                         {messageList.map((messageContent, index) => {
+                            const isMyMessage = username === messageContent.author;
                             return (
                                 <div
-                                    className={`message ${username === messageContent.author ? "you" : "other"}`}
+                                    className={`message ${isMyMessage ? "you" : "other"}`}
                                     key={index}
                                 >
                                     <div className="message-content">
                                         <p>{messageContent.message}</p>
                                     </div>
                                     <div className="message-meta">
-                                        <p id="time">{messageContent.time}</p>
-                                        <p id="author">{messageContent.author}</p>
+                                        <span>{messageContent.time}</span>
+                                        <span>•</span>
+                                        <span>{messageContent.author}</span>
+                                        {isMyMessage && (
+                                            <button
+                                                className="delete-btn"
+                                                onClick={() => deleteMessage(messageContent.id)}
+                                                title="Delete Message"
+                                            >
+                                                &#10005;
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             );
                         })}
                         <div ref={messagesEndRef} />
                     </div>
+
                     <div className="chat-footer">
                         <input
                             type="text"
@@ -126,7 +232,7 @@ function App() {
                                 event.key === "Enter" && sendMessage();
                             }}
                         />
-                        <button onClick={sendMessage}>&#9658;</button>
+                        <button onClick={sendMessage}>&#10148;</button>
                     </div>
                 </div>
             )}
