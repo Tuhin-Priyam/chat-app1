@@ -158,6 +158,23 @@ function App() {
         };
     }, [room]); // Re-bind when room changes to capture correct 'room' in closures if needed
 
+    // Auto-reconnect auth
+    useEffect(() => {
+        function onConnect() {
+            if (phone && password) {
+                console.log("Reconnecting session...");
+                socket.emit('login', { phone, password }, (response) => {
+                    if (response.status === 'ok') {
+                        console.log("Reconnected successfully");
+                        if (room) socket.emit('join_room', room);
+                    }
+                });
+            }
+        }
+        socket.on('connect', onConnect);
+        return () => socket.off('connect', onConnect);
+    }, [phone, password, room]);
+
     // Auto-scroll
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });

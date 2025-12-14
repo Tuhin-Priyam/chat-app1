@@ -7,10 +7,50 @@ const app = express();
 app.use(cors());
 
 // Serve static files from the client directory
+// Serve static files from the client directory
 const path = require('path');
 app.use(express.static(path.join(__dirname, '../client/dist')));
 
-// Handle React routing, return all requests to React app
+// Serve uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// --- File Upload Setup ---
+const multer = require('multer');
+const fs = require('fs');
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir);
+}
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        // Sanitize filename
+        const saneName = file.originalname.replace(/[^a-z0-9.]/gi, '_');
+        cb(null, uniqueSuffix + '-' + saneName);
+    }
+});
+const upload = multer({ storage: storage });
+
+app.post('/upload', upload.single('file'), (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ status: 'error', message: 'No file uploaded' });
+    }
+    // Return the URL to access the file
+    // We return a relative URL, so the client constructs based on its location (or we can return full if we knew host)
+    // Client is using relative path for display now, so returning `/uploads/filename` is correct.
+    const fileUrl = `/uploads/${req.file.filename}`;
+    res.json({
+        status: 'ok',
+        url: fileUrl,
+        type: req.file.mimetype,
+        name: req.file.originalname
+    });
+});
+
 // Handle React routing, return all requests to React app
 app.get(/.*/, (req, res) => {
     res.sendFile(path.join(__dirname, '../client/dist/index.html'));
