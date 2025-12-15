@@ -75,6 +75,11 @@ function App() {
     useEffect(() => {
         function onReceiveMessage(data) {
             setMessageList((list) => {
+                // Deduplication: Check if message ID already exists
+                if (list.some(msg => msg.id === data.id)) {
+                    return list;
+                }
+
                 // Determine if this message belongs to current room
                 if (data.room === room) {
                     // Mark as read immediately if we are in this room
