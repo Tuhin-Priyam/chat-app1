@@ -10,6 +10,23 @@ const socket = io('/', {
     path: '/socket.io'
 });
 
+const PUBLIC_VAPID_KEY = 'BOdgol5VfCcNrxrYnZshOZ7lCLbmwq0-0Hk-IqHoxDvBlQEW0prdXeB1Y5DcIw4EL5xpNifLZ4Qr5R1oXMlCDR8';
+
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+        .replace(/\-/g, '+')
+        .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
 function App() {
     // App State: 'auth', 'chat' (combined room-select + chat area)
     const [view, setView] = useState('auth');
@@ -237,10 +254,45 @@ function App() {
                 if (response.avatar) setMyAvatar(response.avatar);
                 setView('chat'); // Go directly to main view (which has sidebar)
                 refreshRecentChats();
+
+                // --- Push Subscription ---
+                if ('serviceWorker' in navigator) {
+                    subscribeToPush(normalizedPhone);
+                }
             } else {
                 setError(response.message);
             }
         });
+    };
+
+    const subscribeToPush = async (userPhone) => {
+        try {
+            const register = await navigator.serviceWorker.register('/sw.js', {
+                scope: '/'
+            });
+            console.log("Service Worker Registered...");
+
+            const subscription = await register.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(PUBLIC_VAPID_KEY)
+            });
+            console.log("Push Registered...");
+
+            // Send Subscription to Server
+            await fetch('/subscribe', {
+                method: 'POST',
+                body: JSON.stringify({
+                    subscription: subscription,
+                    phone: userPhone
+                }),
+                headers: {
+                    'content-type': 'application/json'
+                }
+            });
+            console.log("Subscription sent to server.");
+        } catch (err) {
+            console.error("Push Error", err);
+        }
     };
 
     // Update Avatar Handler

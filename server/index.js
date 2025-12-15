@@ -5,6 +5,7 @@ const cors = require('cors');
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 
 // Serve static files from the client directory
 // Serve static files from the client directory
@@ -56,6 +57,33 @@ app.get(/.*/, (req, res) => {
     res.sendFile(path.join(__dirname, '../client/dist/index.html'));
 });
 
+const webpush = require('web-push');
+const PUBLIC_VAPID_KEY = 'BOdgol5VfCcNrxrYnZshOZ7lCLbmwq0-0Hk-IqHoxDvBlQEW0prdXeB1Y5DcIw4EL5xpNifLZ4Qr5R1oXMlCDR8';
+const PRIVATE_VAPID_KEY = 'Uoa9pS9_Hy7btmuu5t0p3pTtVpPeoxdyu2TayT3oOEY';
+
+webpush.setVapidDetails(
+    'mailto:test@test.com',
+    PUBLIC_VAPID_KEY,
+    PRIVATE_VAPID_KEY
+);
+
+// Subscribe Route
+app.post('/subscribe', async (req, res) => {
+    // Expect { subscription, phone }
+    // Actually best to take from body. Current auth is via socket, but this is REST.
+    // For MVP, client sends { phone, subscription }
+    const { subscription, phone } = req.body;
+    if (!subscription || !phone) return res.status(400).json({ error: 'Missing fields' });
+
+    try {
+        await saveSubscription(phone, subscription);
+        res.status(201).json({});
+    } catch (err) {
+        console.log(err);
+        res.status(500).json({ error: 'Failed to save subscription' });
+    }
+});
+
 const server = http.createServer(app);
 
 const io = new Server(server, {
@@ -66,7 +94,7 @@ const io = new Server(server, {
     path: '/socket.io'
 });
 
-const { saveMessage, getMessagesForRoom, createUser, verifyUser, deleteMessage, resetRoom, getRecentChats, markMessagesRead, updateUserAvatar } = require('./database');
+const { saveMessage, getMessagesForRoom, createUser, verifyUser, deleteMessage, resetRoom, getRecentChats, markMessagesRead, updateUserAvatar, saveSubscription, getSubscription } = require('./database');
 
 // --- Global State for Presence ---
 const onlineUsers = new Map(); // phone -> socketId
@@ -107,10 +135,14 @@ io.on('connection', (socket) => {
     });
 
     socket.on('login', async ({ phone, password }, callback) => {
-        // Login doesn't technically need strict validation if we just match DB,
-        // but it helps prevent useless DB queries.
+        // Normalize phone just like register
+        const validPhone = validateIndianPhone(phone);
+        if (!validPhone) {
+            return callback({ status: 'error', message: 'Invalid phone number format' });
+        }
+
         try {
-            const user = await verifyUser(phone, password);
+            const user = await verifyUser(validPhone, password);
             if (user) {
                 // Store user info in socket
                 socket.data.user = { username: user.username, phone: user.phone, avatar: user.avatar };
@@ -208,6 +240,45 @@ io.on('connection', (socket) => {
             const id = await saveMessage(data);
             const dataWithId = { ...data, id, status: 'sent', avatar: socket.data.user?.avatar }; // Default status
             io.in(data.room).emit('receive_message', dataWithId);
+
+            // --- Real-time & Push Notification Logic ---
+            const senderPhone = socket.data.user?.phone;
+
+            // Extract recipient from room ID (assuming phone_phone format)
+            if (data.room && senderPhone) {
+                const parts = data.room.split('_');
+                const recipientPhone = parts.find(p => p !== senderPhone);
+
+                if (recipientPhone) {
+                    // 1. Direct Socket Emit (Fixes "Refresh to see new chat" issue)
+                    const recipientSocketId = onlineUsers.get(recipientPhone);
+                    if (recipientSocketId) {
+                        // Send directly to their socket. 
+                        // If they are in the room, they get it via io.in(room). 
+                        // If they are NOT in the room (e.g. at sidebar), this ensures they get it.
+                        // Client logic should handle deduping if needed, but usually redundant emit is fine or can be checked.
+                        // Actually, io.in(room) sends to all sockets IN that room.
+                        // If recipient is NOT in room, they won't get it.
+                        // So we emit to them specifically.
+                        io.to(recipientSocketId).emit('receive_message', dataWithId);
+                    }
+
+                    // 2. Web Push Notification
+                    try {
+                        const sub = await getSubscription(recipientPhone);
+                        if (sub) {
+                            const payload = JSON.stringify({
+                                title: `New message from ${data.author}`,
+                                body: data.message,
+                                icon: '/vite.svg'
+                            });
+                            webpush.sendNotification(sub, payload).catch(err => console.error("Push Error", err));
+                        }
+                    } catch (e) {
+                        console.error("Error checking subscription", e);
+                    }
+                }
+            }
         } catch (err) {
             console.error("Error saving message", err);
         }

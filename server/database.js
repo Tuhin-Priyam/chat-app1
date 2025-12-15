@@ -18,24 +18,31 @@ db.serialize(() => {
     db.run(`
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            room TEXT NOT NULL,
-            author TEXT NOT NULL,
-            message TEXT NOT NULL,
-            type TEXT DEFAULT 'text',
-            time TEXT NOT NULL,
+            room TEXT,
+            author TEXT,
+            message TEXT,
+            type TEXT,
+            time TEXT,
             status TEXT DEFAULT 'sent',
-            read_at TEXT
+            avatar TEXT
         )
     `);
-    // Added phone column, removed unique constraint from username, made phone unique and required
     db.run(`
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL,
+            username TEXT,
             phone TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL
+            password TEXT NOT NULL,
+            avatar TEXT
         )
     `);
+    db.run(`
+        CREATE TABLE IF NOT EXISTS subscriptions (
+            phone TEXT PRIMARY KEY,
+            subscription TEXT
+        )
+    `);
+    console.log("Database initialized.");
 });
 
 // Save a message to the database
@@ -69,13 +76,9 @@ function getMessagesForRoom(room) {
     });
 }
 
-// NEW: Get recent chats for a user (distinct rooms)
+// Get recent chats for a user (distinct rooms)
 function getRecentChats(phone) {
     return new Promise((resolve, reject) => {
-        // Find rooms where phone is part of the room ID (e.g. phone_other or other_phone)
-        // Since room ID is simplistic (phone_phone), we can check LIKE pattern
-        // This is a naive implementation but works for this scope.
-        // We need to fetch the LAST message for each such room.
         const query = `
             SELECT m.*, 
             MAX(m.id) as last_msg_id
@@ -94,25 +97,12 @@ function getRecentChats(phone) {
     });
 }
 
-// NEW: Mark messages as read
+// Mark messages as read
 function markMessagesRead(room, readerPhone) {
     return new Promise((resolve, reject) => {
-        // Update all messages in this room that were NOT authored by readerPhone
-        // and are not yet 'read'
         const time = new Date().toISOString();
+        // Update messages in this room that are NOT from the reader
         const query = `UPDATE messages SET status = 'read', read_at = ? WHERE room = ? AND author != (SELECT username FROM users WHERE phone = ?) AND status != 'read'`;
-
-        // Wait, author in messages is username (display name). 
-        // We need to be careful. The current saveMessage stores 'author' as username.
-        // But we want to exclude messages sent by ME (the reader).
-        // Best way: pass the reader's USERNAME to this function if possible, or look it up.
-        // For efficiency, let's assume we pass readerUsername.
-        // But the signature I planned was (room, userPhone). 
-        // Let's change the signature to accept readerUsername instead, or handle it.
-        // Actually, let's just update all messages where author != 'readerUsername'.
-        // To do that, I need readerUsername.
-        // I will update the function signature below.
-        // Or I can subquery: AND author != (SELECT username FROM users WHERE phone = ?)
 
         db.run(query, [time, room, readerPhone], function (err) {
             if (err) reject(err);
@@ -121,7 +111,7 @@ function markMessagesRead(room, readerPhone) {
     });
 }
 
-// NEW: Update user avatar
+// Update user avatar
 function updateUserAvatar(phone, avatarPath) {
     return new Promise((resolve, reject) => {
         const query = `UPDATE users SET avatar = ? WHERE phone = ?`;
@@ -140,7 +130,7 @@ function createUser(username, phone, password) {
             const query = `INSERT INTO users (username, phone, password) VALUES (?, ?, ?)`;
             db.run(query, [username, phone, hash], function (err) {
                 if (err) {
-                    reject(err); // Likely unique constraint violation on phone
+                    reject(err);
                 } else {
                     resolve(this.lastID);
                 }
@@ -160,7 +150,7 @@ function verifyUser(phone, password) {
 
             const match = await bcrypt.compare(password, row.password);
             if (match) {
-                resolve(row); // Return user object on success
+                resolve(row);
             } else {
                 resolve(false);
             }
@@ -187,14 +177,42 @@ function resetRoom(room) {
     });
 }
 
+// --- Subscription Helpers ---
+const saveSubscription = (phone, subscription) => {
+    return new Promise((resolve, reject) => {
+        const subStr = JSON.stringify(subscription);
+        db.run(
+            `INSERT INTO subscriptions (phone, subscription) VALUES (?, ?) 
+             ON CONFLICT(phone) DO UPDATE SET subscription = excluded.subscription`,
+            [phone, subStr],
+            (err) => {
+                if (err) reject(err);
+                else resolve();
+            }
+        );
+    });
+};
+
+const getSubscription = (phone) => {
+    return new Promise((resolve, reject) => {
+        db.get("SELECT subscription FROM subscriptions WHERE phone = ?", [phone], (err, row) => {
+            if (err) reject(err);
+            else resolve(row ? JSON.parse(row.subscription) : null);
+        });
+    });
+};
+
+
 module.exports = {
     saveMessage,
     getMessagesForRoom,
-    getRecentChats,
-    markMessagesRead,
     createUser,
     verifyUser,
-    updateUserAvatar,
     deleteMessage,
-    resetRoom
+    resetRoom,
+    getRecentChats,
+    markMessagesRead,
+    updateUserAvatar,
+    saveSubscription,
+    getSubscription
 };
