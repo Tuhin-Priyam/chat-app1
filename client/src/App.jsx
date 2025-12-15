@@ -274,13 +274,39 @@ function App() {
             return;
         }
 
+        const handleSuccess = (res) => {
+            setRoom(res.roomId);
+            setTargetPhone(normalizedTarget);
+            setError("");
+            refreshRecentChats();
+        };
+
         socket.emit('start_chat', { targetPhone: normalizedTarget }, (response) => {
             if (response.status === 'ok') {
-                setRoom(response.roomId);
-                setTargetPhone(normalizedTarget);
-                setError("");
-                refreshRecentChats();
-                // Focusing checks
+                handleSuccess(response);
+            } else if (response.message === 'Not authenticated') {
+                console.log("Auth session lost, attempting transparent re-login...");
+                // Retry Logic: Use in-memory credentials to re-auth
+                if (phone && password) {
+                    socket.emit('login', { phone, password }, (loginRes) => {
+                        if (loginRes.status === 'ok') {
+                            // Re-auth success, retry original action
+                            socket.emit('start_chat', { targetPhone: normalizedTarget }, (retryRes) => {
+                                if (retryRes.status === 'ok') {
+                                    handleSuccess(retryRes);
+                                } else {
+                                    alert(retryRes.message);
+                                }
+                            });
+                        } else {
+                            alert("Session expired. Please re-login.");
+                            setView('auth');
+                        }
+                    });
+                } else {
+                    alert("Not authenticated. Please login again.");
+                    setView('auth');
+                }
             } else {
                 alert(response.message);
             }
